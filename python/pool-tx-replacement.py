@@ -149,13 +149,19 @@ if __name__ == "__main__":
     
     testing_address = get_address_from_private_key(decode_hex(testing_key))
     give_me_some_money(testing_address, 3*pow(10, 9))
-    
+    high_gas_price = 3
+    low_gas_price = 2
+
+    # first send some txes with high gas price from random addresses
+    # then send some txes with low gas price from testing address
+    # so that if txes are taken, most likely txes with high gas prices will be taken
+    # now try to replace txes with low gas price with high gas price txes from testing address
     tx_count = 10
     for iter in range(total_key - 1):
-        successful_txes = send_txes(random_private_keys[iter], tx_count, 3, nonces[iter])
+        successful_txes = send_txes(random_private_keys[iter], tx_count, high_gas_price, nonces[iter])
         print("successfully sent: " + format(successful_txes))
         print("failed: " + format(tx_count - successful_txes))
-    successful_txes = send_txes(testing_key, tx_count, 2, my_nonce, True)
+    successful_txes = send_txes(testing_key, tx_count, low_gas_price, my_nonce, True)
     print("successfully sent: " + format(successful_txes))
     print("failed: " + format(tx_count - successful_txes))
     if len(saved_txes) != successful_txes:
@@ -165,16 +171,16 @@ if __name__ == "__main__":
         old_txes.append(tx)
 
     # trying to replace txes, but it should fail as gas price is equal or lower, gas price must be higher
-    successful_txes = send_txes(testing_key, tx_count, 2, 0)
+    successful_txes = send_txes(testing_key, tx_count, low_gas_price, 0)
     print("successfully sent: " + format(successful_txes))
     print("failed: " + format(tx_count - successful_txes))
     
-    successful_txes = send_txes(testing_key, tx_count, 1, 0)
+    successful_txes = send_txes(testing_key, tx_count, low_gas_price - 1, 0)
     print("successfully sent: " + format(successful_txes))
     print("failed: " + format(tx_count - successful_txes))
     
     # this should replace pool txes
-    successful_txes = send_txes(testing_key, tx_count, 3, 0, True)
+    successful_txes = send_txes(testing_key, tx_count, high_gas_price, 0, True)
     print("successfully sent: " + format(successful_txes))
     print("failed: " + format(tx_count - successful_txes))
     
