@@ -1,9 +1,13 @@
 from time import time
-from sqlalchemy import null
+from numpy import sign
+#from sqlalchemy import null
 import web3
 from eth_utils import decode_hex
 import requests
 import json
+import random
+from eth_keys import keys
+from eth_account.messages import encode_defunct
 
 url = 'http://localhost:7070'
 
@@ -24,15 +28,34 @@ def transaction_builder():
             };
     return transaction
 
+def get_random_hex_message(len):
+    len = len * 2
+    msg = "0x"
+    for x in range(len):
+        digit = hex(random.randint(0,15))
+        msg = msg + digit[2]
+    return msg
+
+def generate_private_key():
+    private_key_str = "0xa427dff0b296ab52adce3ba144f6646096dce9b24a035e008b25ac04e516c32a"
+    key_bytes = decode_hex(private_key_str)
+    return keys.PrivateKey(key_bytes)
+
+def sign_random_message(msg):
+    signable = encode_defunct(text = msg)
+    # print(signable)
+    private_key = generate_private_key()
+    signed = web3.eth.Account.sign_message(signable , private_key.to_hex())
+    return signed.signature.hex()
+
 tx = transaction_builder()
+tx_str = json.dumps(tx)
 
-# private_key_bytes = decode_hex('0xd95d6db65f3e2223703c5d8e205d98e3e6b470f067b0f94f6c6bf73d4301ce48')
-# signed_tx = web3.eth.Account.signTransaction(tx, private_key_bytes)
+signature = sign_random_message(tx_str)
+timestamp = str(int(time()))
 
-# print(signed_tx)
-
-signature = "test"
-timestamp = "dfls"
+print(signature)
+print(timestamp)
 
 headers = {'Content-type': 'application/json',
            'Signature': signature,
