@@ -9,6 +9,7 @@ import json
 import random
 from eth_keys import keys
 from eth_account.messages import encode_defunct
+import hashlib
 
 url = 'http://localhost:7070'
 
@@ -29,7 +30,7 @@ def transaction_builder():
     return transaction
 
 def generate_private_key():
-    private_key_str = "0xddd2c0107d2c999dd65b1e3cced4263a03236e92dcb8174dfcc5af30d98692cb"
+    private_key_str = "0x6b6d334d2a5bb1786414b5b4d7ad9cafe0797efc6b88fd281ae5a2cf53692122"
     key_bytes = decode_hex(private_key_str)
     return keys.PrivateKey(key_bytes)
 
@@ -50,7 +51,11 @@ def sign_message(tx, timestamp):
     
     print("serialized params: ", serializedParams)
     
-    signable = encode_defunct(text = serializedParams)
+    
+    hash_256 = hashlib.sha256(serializedParams.encode('utf-8')).hexdigest()
+    signable = encode_defunct(hexstr = "0x" + hash_256)
+    
+    print("hash_256: ", hash_256)
     
     private_key = generate_private_key()
     signed = web3.eth.Account.sign_message(signable , private_key.to_hex())
