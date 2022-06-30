@@ -1,6 +1,6 @@
 from time import time
 import ecdsa
-import hashlib
+from ecdsa.util import sigencode_der
 import sha3
 import requests
 
@@ -46,7 +46,7 @@ def sign_request(request, timestamp):
     h = keccak_obj.digest()
     print("Hash:",  h.hex())
     sk = ecdsa.SigningKey.from_string( bytes.fromhex(api_private_key), curve=ecdsa.SECP256k1)
-    signature = sk.sign_digest(h)
+    signature = sk.sign_digest(h, sigencode=sigencode_der)
     return signature.hex()
 
 
