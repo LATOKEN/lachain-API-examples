@@ -1,43 +1,58 @@
 from time import time
-import web3
-import requests
-import json
-import random
+import ecdsa
 import hashlib
-from eth_account.messages import encode_defunct
+import sha3
+import requests
 
-url = 'http://localhost:7070'
+url = 'http://88.99.86.166:7070'
 
-def transaction_builder():
-    transaction = {
-                "jsonrpc": "2.0" ,
-                "method": "clearInMemoryPool" ,
-                "params":{
-                        },
-                 "id": 1,
-            };
-    return transaction
+api_private_key = "c68a57399035e8ec8c7d7d3944c2d708b6d788dd6ac93628092afefb8cdc43f4"
 
 
-def sign_message(tx, timestamp):
-    serializedParams = ""
-    
-    for tx_param in tx['params']:
-        serializedParams += tx_param + tx['params'][tx_param]
+def request_builder():
+    return {
+            "jsonrpc": "2.0",
+            "method": "eth_sendTransaction",
+            "params":
+                {
+                    "opts": {
+                        "from": "0x87b74be043eba0ae3f0fef0758e8cd1388cf928a",
+                        "to": "0xDA9B931dAA5c211004240C0aCEFE8363176E99B4",
+                        "value": "0x9184e72a",
+                        "data": "0xd46e8dd67c5d32be8d46e8dd67c5d32be8058bb8eb970870f072445675058bb8eb970870f072445675",
+                        "gas": "0x2e1a62",
+                        "gasPrice": "0x9184e72a000"
+                    }
+                },
+             "id": 1,
+        }
 
-    serializedParams = tx['method'] + serializedParams + timestamp
-    
+
+def serialize_json(params):
+    if isinstance(params, str) or isinstance(params, int):
+        return str(params)
+    result = ""
+    for field in params:
+        result += field + serialize_json(params[field])
+    return result
+
+
+def sign_request(request, timestamp):
+    serializedParams = request['method'] + serialize_json(request['params']) + timestamp
     print("serialized params: ", serializedParams)
-    
-    signed = web3.eth.Account.sign_message(encode_defunct(text=serializedParams), "c68a57399035e8ec8c7d7d3944c2d708b6d788dd6ac93628092afefb8cdc43f4")
-    
-    print("signed: ", signed)
-    
-    return signed.signature.hex()
-    
-tx = transaction_builder()
+
+    keccak_obj = sha3.keccak_256()
+    keccak_obj.update(serializedParams.encode('ascii'))
+    h = keccak_obj.digest()
+    print("Hash:",  h.hex())
+    sk = ecdsa.SigningKey.from_string( bytes.fromhex(api_private_key), curve=ecdsa.SECP256k1)
+    signature = sk.sign_digest(h)
+    return signature.hex()
+
+
+tx = request_builder()
 timestamp = str(int(time()))
-signature = sign_message(tx, timestamp)
+signature = sign_request(tx, timestamp)
 
 print(signature)
 print(timestamp)
