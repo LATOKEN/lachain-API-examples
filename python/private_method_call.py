@@ -1,7 +1,4 @@
 from time import time
-import ecdsa
-from ecdsa.util import sigencode_der
-import sha3
 import eth_keys
 import requests
 
@@ -42,19 +39,6 @@ def sign_request(request, timestamp):
     serializedParams = request['method'] + serialize_json(request['params']) + timestamp
     print("serialized params: ", serializedParams)
 
-    keccak_obj = sha3.keccak_256()
-    keccak_obj.update(serializedParams.encode('ascii'))
-    h = keccak_obj.digest()
-    print("Hash:",  h.hex())
-    sk = ecdsa.SigningKey.from_string( bytes.fromhex(api_private_key), curve=ecdsa.SECP256k1)
-    signature = sk.sign_digest(h)
-    return signature.hex()
-
-
-def sign_request2(request, timestamp):
-    serializedParams = request['method'] + serialize_json(request['params']) + timestamp
-    print("serialized params: ", serializedParams)
-
     signerPrivKey = eth_keys.keys.PrivateKey(bytes.fromhex(api_private_key))
     signature = signerPrivKey.sign_msg(serializedParams.encode('ascii'))
     return signature.to_hex()
@@ -63,9 +47,7 @@ def sign_request2(request, timestamp):
 tx = request_builder()
 timestamp = str(int(time()))
 signature = sign_request(tx, timestamp)
-print("Signature1:", signature)
-signature = sign_request2(tx, timestamp)
-print("Signature2:", signature)
+print("Signature:", signature)
 
 headers = {'Content-type': 'application/json',
            'Signature': signature,

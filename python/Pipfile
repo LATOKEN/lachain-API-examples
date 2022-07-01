@@ -4,11 +4,9 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-web3 = "*"
-pysha3 = "*"
-ecdsa = "*"
+eth_keys = "*"
 
 [dev-packages]
 
 [requires]
-python_version = "3.9"
+python_version = "3"
