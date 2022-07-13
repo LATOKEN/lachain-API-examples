@@ -1,7 +1,4 @@
-from inspect import signature
 from time import time
-from numpy import sign
-#from sqlalchemy import null
 import web3
 from eth_utils import decode_hex
 import requests
@@ -10,6 +7,8 @@ import random
 from eth_keys import keys
 from eth_account.messages import encode_defunct
 import hashlib
+
+from pycoin.ecdsa import generator_secp256k1, sign, verify
 
 url = 'http://localhost:7070'
 
@@ -30,7 +29,7 @@ def transaction_builder():
     return transaction
 
 def generate_private_key():
-    private_key_str = "0x6b6d334d2a5bb1786414b5b4d7ad9cafe0797efc6b88fd281ae5a2cf53692122"
+    private_key_str = "0xf6dc8354461516787436f03dbf70d61fd9662316dc6a39191baab7814459edf2"
     key_bytes = decode_hex(private_key_str)
     return keys.PrivateKey(key_bytes)
 
@@ -41,6 +40,20 @@ def sign_random_message(msg):
     signed = web3.eth.Account.sign_message(signable , private_key.to_hex())
     return signed.signature.hex()
 
+def sha3_256Hash(msg):
+    hashBytes = hashlib.sha3_256(msg.encode("utf8")).digest()
+    return int.from_bytes(hashBytes, byteorder="big")
+
+def signECDSAsecp256k1(msg, privKey):
+    msgHash = sha3_256Hash(msg)
+    signature = sign(generator_secp256k1, privKey, msgHash)
+    return signature
+
+def verifyECDSAsecp256k1(msg, signature, pubKey):
+    msgHash = sha3_256Hash(msg)
+    valid = verify(generator_secp256k1, pubKey, msgHash, signature)
+    return valid
+
 def sign_message(tx, timestamp):
     serializedParams = ""
     
@@ -50,32 +63,24 @@ def sign_message(tx, timestamp):
     serializedParams = tx['method'] + serializedParams + timestamp
     
     print("serialized params: ", serializedParams)
+
+    private_key_str = "0xf6dc8354461516787436f03dbf70d61fd9662316dc6a39191baab7814459edf2"
+    signature = signECDSAsecp256k1(serializedParams, int(private_key_str, 16))
     
+    print("signature: ", signature)
     
-    hash_256 = hashlib.sha256(serializedParams.encode('utf-8')).hexdigest()
-    signable = encode_defunct(hexstr = "0x" + hash_256)
-    
-    print("hash_256: ", hash_256)
-    
-    private_key = generate_private_key()
-    signed = web3.eth.Account.sign_message(signable , private_key.to_hex())
-    
-    print("signed: ", signed)
-    
-    return signed.signature.hex()
+    return signature
     
 tx = transaction_builder()
 
 # tx_str = json.dumps(tx)
 # signature = sign_random_message(tx_str)
+
 timestamp = str(int(time()))
 signature = sign_message(tx, timestamp)
 
-print(signature)
-print(timestamp)
-
 headers = {'Content-type': 'application/json',
-           'Signature': signature,
+           'Signature': str(signature),
            'Timestamp': timestamp}
 
 response = requests.post(url, json=tx, headers = headers)
