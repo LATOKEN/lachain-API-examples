@@ -10,6 +10,7 @@ import requests
 import time
 import ethereum
 import random
+from timeit import default_timer as timer
 
 LOCALNET_NODES = [
     "http://localhost:7070",
@@ -171,7 +172,7 @@ def get_args():
 
     # Required positional argument
     parser.add_argument('command', type=str,
-                        help='should be one of check, send_all')
+                        help='should be one of check, send_all, flood or measure')
 
     # Optional argument
     parser.add_argument('--node', type=str,
@@ -181,13 +182,18 @@ def get_args():
     parser.add_argument('--amount', type=int,
                         help='Amount to send (for send_all)')
     
+    
     # Optional argument
     parser.add_argument('--id', type=int,
-                        help='Node Id')
+                        help='Node Id (for flood)')
     
     # Optional argument
     parser.add_argument('--cnt', type=int,
-                        help='Number of transactions')
+                        help='Number of transactions (for flood)')
+
+        # Optional argument
+    parser.add_argument('--interval', type=float,
+                        help='Interval between Requests in sec (for measure) default: 1')
 
     return parser.parse_args()
 
@@ -196,6 +202,8 @@ def get_args():
 args = get_args()
 if args.id:
     api = API(LOCALNET_NODES[args.id])
+
+
 if (args.command == "check"):
     print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
     for i in range(len(private_keys)):
@@ -221,9 +229,27 @@ elif (args.command == "flood"):
     send_coins(private_key, staker_address, amount, count)
 
 elif (args.command == "measure"):
+
     last_block = int(api.block_number(),16)
-    for i in range(10):
-        print(api.block_by_number(last_block))    
+    interval = args.interval or 1
+    start = timer()
+    block_count = 0
+    tx_count = 0
+
+    print("Initially at block %d"%(last_block))
+
+    while (True):
+        time.sleep(interval)
+        block = api.block_by_number(hex(last_block+1), False)
+        if block:
+            block_count+=1
+            last_block+=1
+            tx_count += len(block['transactions'])
+
+        elapsed_time = timer()-start
+        abt = elapsed_time/block_count if block_count > 0 else float("inf")
+        tps = tx_count/elapsed_time
+        print("Processed %d blocks in %f sec, avg block time = %f, tps = %f"%(block_count, elapsed_time, abt, tps))
 
 else:
     print("Invalid command")
