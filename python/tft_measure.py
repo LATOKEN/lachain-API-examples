@@ -100,10 +100,6 @@ def get_address_from_private_key(private_key_byte_or_hex):
     return acct.address
 
 
-
-LOCALNET_NODE = LOCALNET_NODES[0]
-api = API(LOCALNET_NODE)
-
 staker_private_key_bytes = decode_hex('0xd95d6db65f3e2223703c5d8e205d98e3e6b470f067b0f94f6c6bf73d4301ce48')
 private_keys = [
     decode_hex('0xa9cc22d218158125135bd8cc3bac305fa19f488c4eaab5a42ff3d7836bf67e1c'),
@@ -114,10 +110,9 @@ private_keys = [
 
 staker_address = get_address_from_private_key(staker_private_key_bytes)
 addresses = [get_address_from_private_key(private_key) for private_key  in private_keys]
-chain_id = api.get_chain_id()
 
 
-def transaction_builder(from_address, to_address, amount, gas_price, nonce):
+def transaction_builder(from_address, to_address, amount, gas_price, nonce, chain_id):
     transaction = {
         "from": from_address,
         "to": to_address,
@@ -134,28 +129,25 @@ def send_coins(private_key_bytes, to_address, amount, tx_count = 1):
     staker_address = staker_private_key.public_key.to_checksum_address()
     
     print("\n===============================================================================================================")
-    print("Sending amount %d from %s to %s using %s"%(amount, staker_address, to_address, LOCALNET_NODE))
+    print("Sending amount %d from %s to %s using %s"%(amount, staker_address, to_address, api.LOCALNET_NODE))
     print("Repeat %d times"%(tx_count))
     
     int_nonce = int(api.update_nonce(staker_address), 16)
+    chain_id = api.get_chain_id()
 
     for count in range(0, tx_count):
         cur_nonce = count + int_nonce
-        transaction = transaction_builder(staker_address, to_address, amount, 1, cur_nonce)
+        transaction = transaction_builder(staker_address, to_address, amount, 1, cur_nonce, chain_id)
         print("Transaction ", count+1, ": ", transaction)
         signed_tx = web3.eth.Account.signTransaction(transaction, private_key_bytes)
         raw_tx = web3.Web3.toHex(signed_tx.rawTransaction)
 
-        try:
-            tx_hash = api.send_api_request([raw_tx] , "eth_sendRawTransaction")
-            print("Sent Request! tx hash: " + format(tx_hash) + "\n")
-        except Exception as eer:
-            print(eer)
-            return False
+        tx_hash = api.send_api_request([raw_tx] , "eth_sendRawTransaction")
+        print("Sent Request! tx hash: " + format(tx_hash) + "\n")
         
         if (count == tx_count - 1):
             try:
-                connection = web3.Web3(web3.Web3.HTTPProvider(LOCALNET_NODE))
+                connection = web3.Web3(web3.Web3.HTTPProvider(api.LOCALNET_NODE))
                 tx_receipt = connection.eth.wait_for_transaction_receipt(tx_hash, timeout=600)
                 # print(tx_receipt)
                 print("Successfully sent all transactions")
@@ -174,9 +166,6 @@ def get_args():
     parser.add_argument('command', type=str,
                         help='should be one of check, send_all, flood or measure')
 
-    # Optional argument
-    parser.add_argument('--node', type=str,
-                        help='Address of the node to use')
     
     # Optional argument
     parser.add_argument('--amount', type=int,
@@ -200,9 +189,10 @@ def get_args():
 
 
 args = get_args()
-if args.id:
+if args.id is not None:
     api = API(LOCALNET_NODES[args.id])
 
+print("Using: " + api.LOCALNET_NODE)
 
 if (args.command == "check"):
     print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
@@ -221,12 +211,10 @@ elif (args.command == "send_all"):
         print("Address %d(%s) has balance = %s"%(i, addresses[i], int(api.get_balance(addresses[i]), 16)))
     
 elif (args.command == "flood"):
-    assert(args.id is not None and args.amount is not None and args.cnt is not None)
-    id = args.id
-    amount = args.amount
-    count = args.cnt
+    id = args.id if args.id is not None else 0
+    count = args.cnt if args.cnt is not None else 1000
     private_key = private_keys[id]
-    send_coins(private_key, staker_address, amount, count)
+    send_coins(private_key, staker_address, 0, count)
 
 elif (args.command == "measure"):
 
@@ -249,7 +237,12 @@ elif (args.command == "measure"):
         elapsed_time = timer()-start
         abt = elapsed_time/block_count if block_count > 0 else float("inf")
         tps = tx_count/elapsed_time
-        print("Processed %d blocks in %f sec, avg block time = %f, tps = %f"%(block_count, elapsed_time, abt, tps))
+        tpb = 0 if block_count == 0 else tx_count/block_count
+        print('''Processed %d blocks in %f sec\n
+                avg block time = %f\n,
+                txn per sec = %f
+                txn_per_block = %f'''
+                %(block_count, elapsed_time, abt, tps))
 
 else:
     print("Invalid command")
