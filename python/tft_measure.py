@@ -12,6 +12,8 @@ import ethereum
 import random
 from timeit import default_timer as timer
 
+from yaml import parse
+
 LOCALNET_NODES = [
     "http://localhost:7070",
     "http://localhost:7071",
@@ -50,7 +52,7 @@ class API:
     def block_by_hash(self, block, full_tx):
         return self.send_api_request([ block, full_tx ] , "eth_getBlockByHash")
 
-    def block_number(self, ):
+    def block_number(self):
         return self.send_api_request([] , "eth_blockNumber")
 
     def tx_receipt(self, tx_hash):
@@ -128,7 +130,6 @@ def send_coins(private_key_bytes, to_address, amount, tx_count = 1):
     staker_private_key = keys.PrivateKey(private_key_bytes)    
     staker_address = staker_private_key.public_key.to_checksum_address()
     
-    print("\n===============================================================================================================")
     print("Sending amount %d from %s to %s using %s"%(amount, staker_address, to_address, api.LOCALNET_NODE))
     print("Repeat %d times"%(tx_count))
     
@@ -138,25 +139,19 @@ def send_coins(private_key_bytes, to_address, amount, tx_count = 1):
     for count in range(0, tx_count):
         cur_nonce = count + int_nonce
         transaction = transaction_builder(staker_address, to_address, amount, 1, cur_nonce, chain_id)
-        print("Transaction ", count+1, ": ", transaction)
+        print("Transaction %d Processed\r"%(count+1), end='\r', flush=True)
         signed_tx = web3.eth.Account.signTransaction(transaction, private_key_bytes)
         raw_tx = web3.Web3.toHex(signed_tx.rawTransaction)
 
         tx_hash = api.send_api_request([raw_tx] , "eth_sendRawTransaction")
-        print("Sent Request! tx hash: " + format(tx_hash) + "\n")
+        # print("Sent Request! tx hash: " + format(tx_hash) + "\n")
         
         if (count == tx_count - 1):
-            try:
-                connection = web3.Web3(web3.Web3.HTTPProvider(api.LOCALNET_NODE))
-                tx_receipt = connection.eth.wait_for_transaction_receipt(tx_hash, timeout=600)
-                # print(tx_receipt)
-                print("Successfully sent all transactions")
-                print("===============================================================================================================\n")
-
-                return True
-            except Exception as eer:
-                print(eer)
-                return False
+            connection = web3.Web3(web3.Web3.HTTPProvider(api.LOCALNET_NODE))
+            tx_receipt = connection.eth.wait_for_transaction_receipt(tx_hash, timeout=600)
+            # print(tx_receipt)
+            print("Successfully sent all transactions")
+            return True
 
 def get_args():
     import argparse
@@ -180,10 +175,15 @@ def get_args():
     parser.add_argument('--cnt', type=int,
                         help='Number of transactions (for flood)')
 
-        # Optional argument
+    # Optional argument
     parser.add_argument('--interval', type=float,
                         help='Interval between Requests in sec (for measure) default: 1')
-
+    
+    parser.add_argument('--repeat', action='store_true',
+                        help='Flood indefinitely')
+    
+    parser.add_argument('--tx', type=str,
+                        help='txn hash')
     return parser.parse_args()
 
 
@@ -216,35 +216,64 @@ elif (args.command == "flood"):
     id = args.id if args.id is not None else 0
     count = args.cnt if args.cnt is not None else 1000
     private_key = private_keys[id]
-    send_coins(private_key, staker_address, 0, count)
+
+    id = 0
+    while (True):
+        id += 1
+        print("\nBatch %d Starting..."%(id))
+        send_coins(private_key, staker_address, 1, count)
+        print("Batch %d Finished...\n"%(id))
+        if not args.repeat: break
+
+    
 
 elif (args.command == "measure"):
 
     last_block = int(api.block_number(),16)
     interval = args.interval or 1
     start = timer()
+    last = start
     block_count = 0
     tx_count = 0
 
     print("Initially at block %d"%(last_block))
 
     while (True):
+        elapsed_time = timer()-start
+        abt = elapsed_time/block_count if block_count > 0 else float("inf")
+        tps = tx_count/elapsed_time
+        tpb = 0 if block_count == 0 else tx_count/block_count
+        print( ('Processed %d blocks in %f sec, ' + 
+                '\tavg block time = %f, ' +
+                '\ttxn per sec = %f, ' +
+                '\ttxn_per_block = %f\r')
+                %(block_count, elapsed_time, abt, tps, tpb), end='')
+
+
         block = api.block_by_number(hex(last_block+1), False)
         if block:
             block_count+=1
             last_block+=1
             tx_count += len(block['transactions'])
+            elapsed_time = timer()-start
+            abt = elapsed_time/block_count if block_count > 0 else float("inf")
+            tps = tx_count/elapsed_time
+            tpb = 0 if block_count == 0 else tx_count/block_count
+            print( ('Processed %d blocks in %f sec, ' + 
+                '\tavg block time = %f, ' +
+                '\ttxn per sec = %f, ' +
+                '\ttxn_per_block = %f\r')
+                %(block_count, elapsed_time, abt, tps, tpb), end='')
+            
+            cur_time = timer()
+            print("\nBlock %d processed, %d transactions found, block time %f: "%(block_count, len(block['transactions']), cur_time-last))
+            last = cur_time
+            
         else:
             time.sleep(interval)
-        elapsed_time = timer()-start
-        abt = elapsed_time/block_count if block_count > 0 else float("inf")
-        tps = tx_count/elapsed_time
-        tpb = 0 if block_count == 0 else tx_count/block_count
-        print('''Processed %d blocks in %f sec
-                avg block time = %f
-                txn per sec = %f
-                txn_per_block = %f'''
-                %(block_count, elapsed_time, abt, tps, tpb))
+    
+elif args.command == 'receipt':
+    print(api.tx_receipt(args.tx))    
 
 else:
     print("Invalid command")
