@@ -189,8 +189,10 @@ def get_args():
 
 
 args = get_args()
-if args.id is not None:
-    api = API(LOCALNET_NODES[args.id])
+if args.id is None:
+    args.id = 0
+
+api = API(LOCALNET_NODES[args.id])
 
 print("Using: " + api.LOCALNET_NODE)
 
@@ -227,22 +229,22 @@ elif (args.command == "measure"):
     print("Initially at block %d"%(last_block))
 
     while (True):
-        time.sleep(interval)
         block = api.block_by_number(hex(last_block+1), False)
         if block:
             block_count+=1
             last_block+=1
             tx_count += len(block['transactions'])
-
+        else:
+            time.sleep(interval)
         elapsed_time = timer()-start
         abt = elapsed_time/block_count if block_count > 0 else float("inf")
         tps = tx_count/elapsed_time
         tpb = 0 if block_count == 0 else tx_count/block_count
-        print('''Processed %d blocks in %f sec\n
-                avg block time = %f\n,
+        print('''Processed %d blocks in %f sec
+                avg block time = %f
                 txn per sec = %f
                 txn_per_block = %f'''
-                %(block_count, elapsed_time, abt, tps))
+                %(block_count, elapsed_time, abt, tps, tpb))
 
 else:
     print("Invalid command")
