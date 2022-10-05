@@ -21,6 +21,12 @@ LOCALNET_NODES = [
     "http://localhost:7073"
 ]
 
+# LOCALNET_NODES = [
+#     "http://88.198.78.141:7070",
+#     "http://95.217.6.234:7070",
+#     "http://95.217.17.248:7070",
+# ]
+
 class API:
     def __init__(self, LOCALNET_NODE):
         self.LOCALNET_NODE = LOCALNET_NODE
@@ -139,19 +145,17 @@ def send_coins(private_key_bytes, to_address, amount, tx_count = 1):
     for count in range(0, tx_count):
         cur_nonce = count + int_nonce
         transaction = transaction_builder(staker_address, to_address, amount, 1, cur_nonce, chain_id)
-        print("Transaction %d Processed\r"%(count+1), end='\r', flush=True)
         signed_tx = web3.eth.Account.signTransaction(transaction, private_key_bytes)
         raw_tx = web3.Web3.toHex(signed_tx.rawTransaction)
-
         tx_hash = api.send_api_request([raw_tx] , "eth_sendRawTransaction")
-        # print("Sent Request! tx hash: " + format(tx_hash) + "\n")
+        print("Transaction %d Processed: hash = %s\n"%(count+1, str(tx_hash)), flush=True)
+
         
         if (count == tx_count - 1):
             connection = web3.Web3(web3.Web3.HTTPProvider(api.LOCALNET_NODE))
             tx_receipt = connection.eth.wait_for_transaction_receipt(tx_hash, timeout=600)
             # print(tx_receipt)
             print("Successfully sent all transactions")
-            return True
 
 def get_args():
     import argparse
@@ -207,6 +211,16 @@ elif (args.command == "send_all"):
     amount = args.amount
     for i in range(len(private_keys)):
         send_coins(staker_private_key_bytes, addresses[i], amount)
+    
+    print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
+    for i in range(len(private_keys)):
+        print("Address %d(%s) has balance = %s"%(i, addresses[i], int(api.get_balance(addresses[i]), 16)))
+
+elif (args.command == "send_back"):
+    assert(args.amount is not None)
+    amount = args.amount
+    for i in range(len(private_keys)):
+        send_coins(private_keys[i], staker_address, amount)
     
     print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
     for i in range(len(private_keys)):
