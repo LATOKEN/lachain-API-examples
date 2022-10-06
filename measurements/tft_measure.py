@@ -1,48 +1,51 @@
 #! /usr/bin/env python
 
 import json
+import time
+
+import requests
 import web3
+from eth_account.messages import encode_defunct
 from eth_keys import keys
 from eth_utils import decode_hex
-import requests
-import time
-from eth_account.messages import encode_defunct
+from collections.abc import Iterable, Mapping
 
 class API:
-    def __init__(self, LOCALNET_NODE):
-        self.LOCALNET_NODE = LOCALNET_NODE
-        self.NODE = web3.Web3(web3.Web3.HTTPProvider(self.LOCALNET_NODE))
+    def __init__(self, node):
+        self.rpc_url = node['rpc']
+        self.private_key = node['api_private_key']
+        self.public_key = node['api_public_key']
+        self.NODE = web3.Web3(web3.Web3.HTTPProvider(self.rpc_url))
         self.SESSION = requests.Session()
     
 
-    def sign_message(self, tx, timestamp):
-        serializedParams = ""        
-        for tx_param in tx['params']:
-            serializedParams += tx_param + tx['params'][tx_param]
-
-        serializedParams = tx['method'] + serializedParams + timestamp
-        signed = web3.eth.Account.sign_message(encode_defunct(text=serializedParams), "c68a57399035e8ec8c7d7d3944c2d708b6d788dd6ac93628092afefb8cdc43f4")
+    def serialize(self, params):
+        serialized = ""
+        if (params is None):
+            return ""
+        elif isinstance(params, str):
+            return params
+        elif isinstance(params, Iterable):
+            for item in params:
+                serialized += self.serialize(item)
+        elif isinstance(params, Mapping):
+            for key, value in params.items():
+                serialized += self.serialize(key)
+                serialized += self.serialize(value)
+        else:
+            serialized += str(params)
+        return serialized
+        
+    def __sign_message(self, tx, timestamp):
+        print(json.dumps(tx, indent=4), timestamp)
+        serializedParams = tx['method'] + self.serialize(tx['params']) + timestamp
+        print(self.private_key, serializedParams)
+        signed = web3.eth.Account.sign_message(encode_defunct(text=serializedParams), self.private_key)
         return signed.signature.hex()
+    
         
-
-    def send_api_request_to_address(self, address, params , method):
-        payload= {"jsonrpc":"2.0",
-            "method":method,
-            "params":params,
-            "id":0}
         
-        headers = {'Content-type': 'application/json'}
-        response = self.SESSION.post(address, json=payload, headers=headers)
-        try:
-            res = response.json()['result']
-            return res
-        except Exception as eer:
-            print(response.json())
-            print("exception: " + format(eer))
-            return eer
-
-
-    def send_private_api_request_to_address(self, address, params, method):
+    def __send_api_request_to_address(self, address, params, method, private=False):
         payload= {
             "jsonrpc":"2.0",
             "method":method,
@@ -50,14 +53,18 @@ class API:
             "id":0
         }
 
-        timestamp = str(int(time()))
-        signature = self.sign_message(payload, timestamp)
+        if private:
+            timestamp = str(int(time.time()))
+            signature = self.__sign_message(payload, timestamp)
         
-        headers = {
-            'Content-type': 'application/json',
-            'Signature': signature,
-            'Timestamp': timestamp
-        }
+            headers = {
+                'Content-type': 'application/json',
+                'Signature': signature,
+                'Timestamp': timestamp
+            }
+        else:
+            headers = {'Content-type': 'application/json'}
+
         response = self.SESSION.post(address, json=payload, headers=headers)
         try:
             res = response.json()['result']
@@ -67,8 +74,10 @@ class API:
             print("exception: " + format(eer))
             return eer
 
-    def send_api_request(self, params , method):
-        return self.send_api_request_to_address(self.LOCALNET_NODE, params, method)
+    def send_api_request(self, params , method, private=False):
+        if private:
+            return self.__send_api_request_to_address(self.rpc_url, params, method, private)
+        return self.__send_api_request_to_address(self.rpc_url, params, method)
 
     def block_by_number(self, block, full_tx):
         return self.send_api_request([ block, full_tx ] , "eth_getBlockByNumber")
@@ -142,7 +151,7 @@ def send_coins(api, private_key_bytes, to_address, amount, tx_count = 1):
     staker_private_key = keys.PrivateKey(private_key_bytes)    
     staker_address = staker_private_key.public_key.to_checksum_address()
     
-    print("Sending amount %d from %s to %s using %s"%(amount, staker_address, to_address, api.LOCALNET_NODE))
+    print("Sending amount %d from %s to %s using %s"%(amount, staker_address, to_address, api.rpc_url))
     print("Repeat %d times"%(tx_count))
     
     int_nonce = int(api.update_nonce(staker_address), 16)
@@ -158,7 +167,7 @@ def send_coins(api, private_key_bytes, to_address, amount, tx_count = 1):
 
         
         if (count == tx_count - 1):
-            connection = web3.Web3(web3.Web3.HTTPProvider(api.LOCALNET_NODE))
+            connection = web3.Web3(web3.Web3.HTTPProvider(api.rpc_url))
             tx_receipt = connection.eth.wait_for_transaction_receipt(tx_hash, timeout=600)
             # print(tx_receipt)
             print("Successfully sent all transactions")
@@ -167,7 +176,7 @@ def send_coins_batch(api, private_key_bytes, to_address, amount, tx_count):
     staker_private_key = keys.PrivateKey(private_key_bytes)    
     staker_address = staker_private_key.public_key.to_checksum_address()
     
-    print("Sending amount %d from %s to %s using %s"%(amount, staker_address, to_address, api.LOCALNET_NODE))
+    print("Sending amount %d from %s to %s using %s"%(amount, staker_address, to_address, api.rpc_url))
     print("Repeat %d times"%(tx_count))
     
     int_nonce = int(api.update_nonce(staker_address), 16)
@@ -181,12 +190,12 @@ def send_coins_batch(api, private_key_bytes, to_address, amount, tx_count):
         raw_tx = web3.Web3.toHex(signed_tx.rawTransaction)
         tx_list.append(raw_tx)
 
-    tx_hash = api.send_api_request([tx_list] , "la_sendRawTransactionBatch")
+    tx_hash = api.send_api_request([tx_list] , "la_sendRawTransactionBatch", private=True)
     print("Transaction %d Processed: hash = %s\n"%(count+1, str(tx_hash)), flush=True)
 
     
     if (count == tx_count - 1):
-        connection = web3.Web3(web3.Web3.HTTPProvider(api.LOCALNET_NODE))
+        connection = web3.Web3(web3.Web3.HTTPProvider(api.rpc_url))
         tx_receipt = connection.eth.wait_for_transaction_receipt(tx_hash, timeout=600)
         # print(tx_receipt)
         print("Successfully sent all transactions")
@@ -243,9 +252,9 @@ def main():
     staker_address = get_address_from_private_key(staker_private_key_bytes)
     addresses = [get_address_from_private_key(private_key) for private_key  in private_keys]
 
-    api = API(config['nodes'][args.id]['rpc'])
+    api = API(config['nodes'][args.id])
 
-    print("Using: " + api.LOCALNET_NODE)
+    print("Using: " + api.rpc_url)
 
     if (args.command == "check"):
         print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))

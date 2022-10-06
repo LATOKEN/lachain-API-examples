@@ -17,8 +17,8 @@
         },
         {
             "rpc" : "http://localhost:7073",
-            "private_key" : "",
-            "public_key" : "",
+            "api_private_key" : "",
+            "api_public_key" : "",
         },
     ],
     "staker_address" : "0xd95d6db65f3e2223703c5d8e205d98e3e6b470f067b0f94f6c6bf73d4301ce48",
