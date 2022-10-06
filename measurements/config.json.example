@@ -1,0 +1,31 @@
+{
+    "nodes" : [
+        {
+            "rpc" : "http://localhost:7070",
+            "api_private_key" : "",
+            "api_public_key" : "",
+        },
+        {
+            "rpc" : "http://localhost:7071",
+            "api_private_key" : "",
+            "api_public_key" : "",
+        },
+        {
+            "rpc" : "http://localhost:7072",
+            "api_private_key" : "",
+            "api_public_key" : "",
+        },
+        {
+            "rpc" : "http://localhost:7073",
+            "private_key" : "",
+            "public_key" : "",
+        },
+    ],
+    "staker_address" : "0xd95d6db65f3e2223703c5d8e205d98e3e6b470f067b0f94f6c6bf73d4301ce48",
+    "addresses" : [
+        "0xa9cc22d218158125135bd8cc3bac305fa19f488c4eaab5a42ff3d7836bf67e1c",
+        "0xaa13e71bbfd2604fc2fce35c63fa623dcf3449077cb74dfa50a452773b2bac1e",
+        "0x9a3654fb8293a2c9c6bfce3621222b17c2c40a378140c2a898f9c0cfaa10c785",
+        "0xcc451b88529a34524a9a0aa2e544571fbcaafb3167553f6e1821601d1b9f9857",
+    ]
+}

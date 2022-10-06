@@ -1,31 +1,12 @@
 #! /usr/bin/env python
 
-from ast import arg
+import json
 import web3
 from eth_keys import keys
-import eth_utils
 from eth_utils import decode_hex
-from jsonrpcclient import request
 import requests
 import time
-import ethereum
-import random
-from timeit import default_timer as timer
-
-from yaml import parse
-
-LOCALNET_NODES = [
-    "http://localhost:7070",
-    "http://localhost:7071",
-    "http://localhost:7072",
-    "http://localhost:7073"
-]
-
-# LOCALNET_NODES = [
-#     "http://88.198.78.141:7070",
-#     "http://95.217.6.234:7070",
-#     "http://95.217.17.248:7070",
-# ]
+from eth_account.messages import encode_defunct
 
 class API:
     def __init__(self, LOCALNET_NODE):
@@ -33,6 +14,17 @@ class API:
         self.NODE = web3.Web3(web3.Web3.HTTPProvider(self.LOCALNET_NODE))
         self.SESSION = requests.Session()
     
+
+    def sign_message(self, tx, timestamp):
+        serializedParams = ""        
+        for tx_param in tx['params']:
+            serializedParams += tx_param + tx['params'][tx_param]
+
+        serializedParams = tx['method'] + serializedParams + timestamp
+        signed = web3.eth.Account.sign_message(encode_defunct(text=serializedParams), "c68a57399035e8ec8c7d7d3944c2d708b6d788dd6ac93628092afefb8cdc43f4")
+        return signed.signature.hex()
+        
+
     def send_api_request_to_address(self, address, params , method):
         payload= {"jsonrpc":"2.0",
             "method":method,
@@ -40,6 +32,32 @@ class API:
             "id":0}
         
         headers = {'Content-type': 'application/json'}
+        response = self.SESSION.post(address, json=payload, headers=headers)
+        try:
+            res = response.json()['result']
+            return res
+        except Exception as eer:
+            print(response.json())
+            print("exception: " + format(eer))
+            return eer
+
+
+    def send_private_api_request_to_address(self, address, params, method):
+        payload= {
+            "jsonrpc":"2.0",
+            "method":method,
+            "params":params,
+            "id":0
+        }
+
+        timestamp = str(int(time()))
+        signature = self.sign_message(payload, timestamp)
+        
+        headers = {
+            'Content-type': 'application/json',
+            'Signature': signature,
+            'Timestamp': timestamp
+        }
         response = self.SESSION.post(address, json=payload, headers=headers)
         try:
             res = response.json()['result']
@@ -108,18 +126,6 @@ def get_address_from_private_key(private_key_byte_or_hex):
     return acct.address
 
 
-staker_private_key_bytes = decode_hex('0xd95d6db65f3e2223703c5d8e205d98e3e6b470f067b0f94f6c6bf73d4301ce48')
-private_keys = [
-    decode_hex('0xa9cc22d218158125135bd8cc3bac305fa19f488c4eaab5a42ff3d7836bf67e1c'),
-    decode_hex('0xaa13e71bbfd2604fc2fce35c63fa623dcf3449077cb74dfa50a452773b2bac1e'),
-    decode_hex('0x9a3654fb8293a2c9c6bfce3621222b17c2c40a378140c2a898f9c0cfaa10c785'),
-    decode_hex('0xcc451b88529a34524a9a0aa2e544571fbcaafb3167553f6e1821601d1b9f9857')
-]
-
-staker_address = get_address_from_private_key(staker_private_key_bytes)
-addresses = [get_address_from_private_key(private_key) for private_key  in private_keys]
-
-
 def transaction_builder(from_address, to_address, amount, gas_price, nonce, chain_id):
     transaction = {
         "from": from_address,
@@ -132,7 +138,7 @@ def transaction_builder(from_address, to_address, amount, gas_price, nonce, chai
     }
     return transaction
 
-def send_coins(private_key_bytes, to_address, amount, tx_count = 1):
+def send_coins(api, private_key_bytes, to_address, amount, tx_count = 1):
     staker_private_key = keys.PrivateKey(private_key_bytes)    
     staker_address = staker_private_key.public_key.to_checksum_address()
     
@@ -157,6 +163,35 @@ def send_coins(private_key_bytes, to_address, amount, tx_count = 1):
             # print(tx_receipt)
             print("Successfully sent all transactions")
 
+def send_coins_batch(api, private_key_bytes, to_address, amount, tx_count):
+    staker_private_key = keys.PrivateKey(private_key_bytes)    
+    staker_address = staker_private_key.public_key.to_checksum_address()
+    
+    print("Sending amount %d from %s to %s using %s"%(amount, staker_address, to_address, api.LOCALNET_NODE))
+    print("Repeat %d times"%(tx_count))
+    
+    int_nonce = int(api.update_nonce(staker_address), 16)
+    chain_id = api.get_chain_id()
+
+    tx_list = []
+    for count in range(0, tx_count):
+        cur_nonce = count + int_nonce
+        transaction = transaction_builder(staker_address, to_address, amount, 1, cur_nonce, chain_id)
+        signed_tx = web3.eth.Account.signTransaction(transaction, private_key_bytes)
+        raw_tx = web3.Web3.toHex(signed_tx.rawTransaction)
+        tx_list.append(raw_tx)
+
+    tx_hash = api.send_api_request([tx_list] , "la_sendRawTransactionBatch")
+    print("Transaction %d Processed: hash = %s\n"%(count+1, str(tx_hash)), flush=True)
+
+    
+    if (count == tx_count - 1):
+        connection = web3.Web3(web3.Web3.HTTPProvider(api.LOCALNET_NODE))
+        tx_receipt = connection.eth.wait_for_transaction_receipt(tx_hash, timeout=600)
+        # print(tx_receipt)
+        print("Successfully sent all transactions")
+
+
 def get_args():
     import argparse
     parser = argparse.ArgumentParser(description='Script for measuring txn finality time')
@@ -172,8 +207,8 @@ def get_args():
     
     
     # Optional argument
-    parser.add_argument('--id', type=int,
-                        help='Node Id (for flood)')
+    parser.add_argument('--id', type=int, default=0,
+                        help='Node Id (for flood), defaults to 0')
     
     # Optional argument
     parser.add_argument('--cnt', type=int,
@@ -188,109 +223,120 @@ def get_args():
     
     parser.add_argument('--tx', type=str,
                         help='txn hash')
+
+    parser.add_argument('--config', type=str, default='config.json',
+                        help='config file path, defaults to config.json')
+
     return parser.parse_args()
 
 
 
-args = get_args()
-if args.id is None:
-    args.id = 0
+def main():
+    args = get_args()
 
-api = API(LOCALNET_NODES[args.id])
-
-print("Using: " + api.LOCALNET_NODE)
-
-if (args.command == "check"):
-    print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
-    for i in range(len(private_keys)):
-        print("Address %d(%s) has balance = %s"%(i, addresses[i], int(api.get_balance(addresses[i]), 16)))
+    with open(args.config) as configfile:
+        config = json.load(configfile)
     
+    staker_private_key_bytes = decode_hex(config['staker_address'])
+    private_keys = [decode_hex(key) for key in config['addresses']]
 
-elif (args.command == "send_all"):
-    assert(args.amount is not None)
-    amount = args.amount
-    for i in range(len(private_keys)):
-        send_coins(staker_private_key_bytes, addresses[i], amount)
-    
-    print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
-    for i in range(len(private_keys)):
-        print("Address %d(%s) has balance = %s"%(i, addresses[i], int(api.get_balance(addresses[i]), 16)))
+    staker_address = get_address_from_private_key(staker_private_key_bytes)
+    addresses = [get_address_from_private_key(private_key) for private_key  in private_keys]
 
-elif (args.command == "send_back"):
-    assert(args.amount is not None)
-    amount = args.amount
-    for i in range(len(private_keys)):
-        send_coins(private_keys[i], staker_address, amount)
-    
-    print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
-    for i in range(len(private_keys)):
-        print("Address %d(%s) has balance = %s"%(i, addresses[i], int(api.get_balance(addresses[i]), 16)))
-    
-elif (args.command == "flood"):
-    id = args.id if args.id is not None else 0
-    count = args.cnt if args.cnt is not None else 1000
-    private_key = private_keys[id]
+    api = API(config['nodes'][args.id]['rpc'])
 
-    id = 0
-    while (True):
-        id += 1
-        print("\nBatch %d Starting..."%(id))
-        send_coins(private_key, staker_address, 1, count)
-        print("Batch %d Finished...\n"%(id))
-        if not args.repeat: break
+    print("Using: " + api.LOCALNET_NODE)
 
-    
+    if (args.command == "check"):
+        print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
+        for i in range(len(private_keys)):
+            print("Address %d(%s) has balance = %s"%(i, addresses[i], int(api.get_balance(addresses[i]), 16)))
+    elif (args.command == "send_all"):
+        assert(args.amount is not None)
+        amount = args.amount
+        for i in range(len(private_keys)):
+            send_coins(api, staker_private_key_bytes, addresses[i], amount)
+        
+        print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
+        for i in range(len(private_keys)):
+            print("Address %d(%s) has balance = %s"%(i, addresses[i], int(api.get_balance(addresses[i]), 16)))
 
-elif (args.command == "measure"):
+    elif (args.command == "send_back"):
+        assert(args.amount is not None)
+        amount = args.amount
+        for i in range(len(private_keys)):
+            send_coins(api, private_keys[i], staker_address, amount)
+        
+        print("Staker (%s) has balance = %s"%(staker_address, int(api.get_balance(staker_address), 16)))
+        for i in range(len(private_keys)):
+            print("Address %d(%s) has balance = %s"%(i, addresses[i], int(api.get_balance(addresses[i]), 16)))
+        
+    elif (args.command == "flood"):
+        id = args.id if args.id is not None else 0
+        count = args.cnt if args.cnt is not None else 1000
+        private_key = private_keys[id]
 
-    last_block = int(api.block_number(),16)
-    interval = args.interval or 1
-    start = timer()
-    last = start
-    block_count = 0
-    tx_count = 0
+        id = 0
+        while (True):
+            id += 1
+            print("\nBatch %d Starting..."%(id))
+            send_coins_batch(api, private_key, staker_address, 1, count)
+            print("Batch %d Finished...\n"%(id))
+            if not args.repeat: break
 
-    print("Initially at block %d"%(last_block))
+        
 
-    while (True):
-        elapsed_time = timer()-start
-        abt = elapsed_time/block_count if block_count > 0 else float("inf")
-        tps = tx_count/elapsed_time
-        tpb = 0 if block_count == 0 else tx_count/block_count
-        print( ('Processed %d blocks in %f sec, ' + 
-                '\tavg block time = %f, ' +
-                '\ttxn per sec = %f, ' +
-                '\ttxn_per_block = %f\r')
-                %(block_count, elapsed_time, abt, tps, tpb), end='')
+    elif (args.command == "measure"):
 
+        last_block = int(api.block_number(),16)
+        interval = args.interval or 1
+        start = timer()
+        last = start
+        block_count = 0
+        tx_count = 0
 
-        block = api.block_by_number(hex(last_block+1), False)
-        if block:
-            block_count+=1
-            last_block+=1
-            tx_count += len(block['transactions'])
+        print("Initially at block %d"%(last_block))
+
+        while (True):
             elapsed_time = timer()-start
             abt = elapsed_time/block_count if block_count > 0 else float("inf")
             tps = tx_count/elapsed_time
             tpb = 0 if block_count == 0 else tx_count/block_count
             print( ('Processed %d blocks in %f sec, ' + 
-                '\tavg block time = %f, ' +
-                '\ttxn per sec = %f, ' +
-                '\ttxn_per_block = %f\r')
-                %(block_count, elapsed_time, abt, tps, tpb), end='')
-            
-            cur_time = timer()
-            print("\nBlock %d processed, %d transactions found, block time %f: "%(block_count, len(block['transactions']), cur_time-last))
-            last = cur_time
-            
-        else:
-            time.sleep(interval)
-    
-elif args.command == 'receipt':
-    print(api.tx_receipt(args.tx))    
-
-else:
-    print("Invalid command")
+                    '\tavg block time = %f, ' +
+                    '\ttxn per sec = %f, ' +
+                    '\ttxn_per_block = %f\r')
+                    %(block_count, elapsed_time, abt, tps, tpb), end='')
 
 
+            block = api.block_by_number(hex(last_block+1), False)
+            if block:
+                block_count+=1
+                last_block+=1
+                tx_count += len(block['transactions'])
+                elapsed_time = timer()-start
+                abt = elapsed_time/block_count if block_count > 0 else float("inf")
+                tps = tx_count/elapsed_time
+                tpb = 0 if block_count == 0 else tx_count/block_count
+                print( ('Processed %d blocks in %f sec, ' + 
+                    '\tavg block time = %f, ' +
+                    '\ttxn per sec = %f, ' +
+                    '\ttxn_per_block = %f\r')
+                    %(block_count, elapsed_time, abt, tps, tpb), end='')
+                
+                cur_time = timer()
+                print("\nBlock %d processed, %d transactions found, block time %f: "%(block_count, len(block['transactions']), cur_time-last))
+                last = cur_time
+                
+            else:
+                time.sleep(interval)
+        
+    elif args.command == 'receipt':
+        print(api.tx_receipt(args.tx))    
 
+    else:
+        print("Invalid command")
+
+
+if __name__ == "__main__":
+    main()
