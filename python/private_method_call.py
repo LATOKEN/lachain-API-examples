@@ -25,7 +25,7 @@ def request_builder():
              "id": 1,
         }
 
-
+# this serialization may not work for other methods
 def serialize_json(params):
     if isinstance(params, str) or isinstance(params, int):
         return str(params)
