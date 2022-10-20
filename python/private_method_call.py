@@ -1,42 +1,48 @@
+from collections.abc import Iterable, Mapping
 from time import time
 import eth_keys
 import requests
 
-url = 'http://88.99.86.166:7070'
+url = 'http://localhost:9069'
 
-api_private_key = "c68a57399035e8ec8c7d7d3944c2d708b6d788dd6ac93628092afefb8cdc43f4"
+api_private_key = "76f368bdebe046a5a3945baac98a6a6ccd135e76e4303bc97631e1b14ac09733"
 
 
 def request_builder():
     return {
             "jsonrpc": "2.0",
-            "method": "eth_sendTransaction",
+            "method": "la_sendRawTransactionBatch",
             "params":
                 {
-                    "opts": {
-                        "from": "0x87b74be043eba0ae3f0fef0758e8cd1388cf928a",
-                        "to": "0xDA9B931dAA5c211004240C0aCEFE8363176E99B4",
-                        "value": "0x9184e72a",
-                        "data": "0xd46e8dd67c5d32be8d46e8dd67c5d32be8058bb8eb970870f072445675058bb8eb970870f072445675",
-                        "gas": "0x2e1a62",
-                        "gasPrice": "0x9184e72a000"
-                    }
+                    "rawTxs": [
+                        "0xd46e8dd67c5d32be8d46e8dd67c5d32be8058bb8eb970870f072445675058bb8eb970870f072445675",
+                        "0xd46e8dd67c5d32be8d46e8dd67c5d32be8058bb8eb970870f072445675058bb8eb970870f072445675"
+                    ]
                 },
              "id": 1,
         }
 
 # this serialization may not work for other methods
-def serialize_json(params):
-    if isinstance(params, str) or isinstance(params, int):
-        return str(params)
-    result = ""
-    for field in params:
-        result += field + serialize_json(params[field])
-    return result
+def serialize(params):
+    serialized = ""
+    if (params is None):
+        return ""
+    elif isinstance(params, str):
+        return params
+    elif isinstance(params, Mapping):
+        for key, value in params.items():
+            serialized += serialize(key)
+            serialized += serialize(value)
+    elif isinstance(params, Iterable):
+        for item in params:
+            serialized += serialize(item)
+    else:
+        serialized += str(params)
+    return serialized
 
 
 def sign_request(request, timestamp):
-    serializedParams = request['method'] + serialize_json(request['params']) + timestamp
+    serializedParams = request['method'] + serialize(request['params']) + timestamp
     print("serialized params: ", serializedParams)
 
     signerPrivKey = eth_keys.keys.PrivateKey(bytes.fromhex(api_private_key))
