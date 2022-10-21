@@ -6,7 +6,7 @@ import api_client
 
 # Local
 node = {
-    "rpc": "http://localhost:7070",
+    "rpc": "http://localhost:9069",
     "api_private_key" : "0xd0fe2cd59aafc8e628be2ea98e1c69b454e33d1b067944641585921a3109498f",
 }
 
