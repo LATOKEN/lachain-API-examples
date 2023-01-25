@@ -3,8 +3,11 @@ from time import time
 import eth_keys
 import requests
 
+# change the url to the node address
+# don't use rpc-mainnet.lachain.io because this will target a random node
 url = 'http://localhost:7070'
 
+# put private key here
 api_private_key = ""
 # "deleteTransactionPoolRepository"
 # "clearInMemoryPool"
